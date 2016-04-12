@@ -223,7 +223,7 @@ def load_and_log_params(cli_params):
             replace_str = "<- " + str(new_params.get(k))
         else:
             replace_str = ""
-        logger.info(" {:20}: {:<20} {}".format(k, v, replace_str))
+        logger.info(" {!s:20s}: {!s:<20s} {}".format(k, v, replace_str))
     return p, loaded
 
 

@@ -146,11 +146,11 @@ class TestMonitoring(object):
                 lst = [up for up in cg.updates if up.name == 'shared_%s' % par.name]
                 assert len(lst) == 1
                 return lst[0]
-            bn_share = map(filter_share, bn_ps)
+            bn_share = list(map(filter_share, bn_ps))
 
             # Replace the BN coefficients in the test data model - Replace the
             # theano variables in the test graph with the shareds
-            output_vars_replaced = cg.replace(zip(bn_ps, bn_share)).outputs
+            output_vars_replaced = cg.replace(list(zip(bn_ps, bn_share))).outputs
 
             # Pick out the counter
             self._counter = self._param_from_updates(cg.updates, 'counter')
@@ -160,7 +160,7 @@ class TestMonitoring(object):
 
     def _param_from_updates(self, updates, p_name):
         var_filter = VariableFilter(roles=[BNPARAM])
-        bn_ps = var_filter(updates.keys())
+        bn_ps = var_filter(list(updates.keys()))
         p = [p for p in bn_ps if p.name == p_name]
         assert len(p) == 1, 'No %s of more than one %s' % (p_name, p_name)
         return p[0]
@@ -174,7 +174,7 @@ class TestMonitoring(object):
         # same value in a graph. Therefore, they are all "replicated" to a new
         # Theano variable
         if isinstance(output_vars, (list, tuple)):
-            return map(self.replicate_vars, output_vars)
+            return list(map(self.replicate_vars, output_vars))
         assert not hasattr(output_vars.tag, 'aggregation_scheme'), \
             'The variable %s already has an aggregator ' % output_vars.name + \
             'assigned to it - are you using a datasetmonitor with the same' + \
@@ -251,7 +251,7 @@ class FinalTestMonitoring(SimpleExtension, MonitoringExtension, TestMonitoring):
             self.reset_counter()
 
         value_dict = self._tst_evaluator.evaluate(self.tst_stream)
-        self.add_records(self.main_loop.log, value_dict.items())
+        self.add_records(self.main_loop.log, list(value_dict.items()))
 
 
 class LRDecay(SimpleExtension):

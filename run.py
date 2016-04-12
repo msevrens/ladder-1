@@ -27,7 +27,7 @@ from fuel.streams import DataStream
 from fuel.transformers import Transformer
 
 from picklable_itertools import cycle, imap
-from itertools import izip, product, tee
+from itertools import product, tee
 
 logger = logging.getLogger('main')
 
@@ -111,7 +111,7 @@ class SemiDataStream(Transformer):
         labeled = self.ds_labeled.get_epoch_iterator(**kwargs)
         assert type(labeled) == type(unlabeled)
 
-        return imap(self.mergedicts, cycle(labeled), unlabeled)
+        return map(self.mergedicts, cycle(labeled), unlabeled)
 
     def mergedicts(self, x, y):
         return dict(list(x.items()) + list(y.items()))
@@ -186,7 +186,7 @@ def setup_model(p):
             loaded = numpy.load(f)
             cg = ComputationGraph([ladder.costs.total])
             current_params = VariableFilter(roles=[PARAMETER])(cg.variables)
-            logger.info('Loading parameters: %s' % ', '.join(loaded.keys()))
+            logger.info('Loading parameters: %s' % ', '.join(list(loaded.keys())))
             for param in current_params:
                 assert param.get_value().shape == loaded[param.name].shape
                 param.set_value(loaded[param.name])
@@ -199,7 +199,7 @@ def load_and_log_params(cli_params):
     if cli_params.get('load_from'):
         p = load_df(cli_params.load_from, 'params').to_dict()[0]
         p = AttributeDict(p)
-        for key in cli_params.iterkeys():
+        for key in cli_params.keys():
             if key not in p:
                 p[key] = None
         new_params = cli_params
@@ -217,7 +217,7 @@ def load_and_log_params(cli_params):
     logger.info(' '.join(sys.argv))
 
     logger.info('== PARAMETERS ==')
-    for k, v in p.iteritems():
+    for k, v in p.items():
         if new_params.get(k) is not None:
             p[k] = new_params[k]
             replace_str = "<- " + str(new_params.get(k))
@@ -321,7 +321,7 @@ def analyze(cli_params):
             extensions=[
                 FinalTestMonitoring(
                     [ladder.costs.class_clean, ladder.error.clean]
-                    + ladder.costs.denois.values(),
+                    + list(ladder.costs.denois.values()),
                     make_datastream(data.train, data.train_ind,
                                     # These need to match with the training
                                     p.batch_size,
@@ -378,14 +378,14 @@ def analyze(cli_params):
     # Loop over one epoch
     for d in it:
         # Store all inputs
-        for k, v in d.iteritems():
+        for k, v in d.items():
             inputs[k] += [v]
         # Store outputs
         res += [f(*[d[str(inp)] for inp in cg.inputs])]
 
     # Concatenate all minibatches
     res = [numpy.vstack(minibatches) for minibatches in zip(*res)]
-    inputs = {k: numpy.vstack(v) for k, v in inputs.iteritems()}
+    inputs = {k: numpy.vstack(v) for k, v in inputs.items()}
 
     return inputs['targets_labeled'], res[0]
 
@@ -415,7 +415,7 @@ def train(cli_params):
 
     # Fetch all batch normalization updates. They are in the clean path.
     bn_updates = ComputationGraph([ladder.costs.class_clean]).updates
-    assert 'counter' in [u.name for u in bn_updates.keys()], \
+    assert 'counter' in [u.name for u in list(bn_updates.keys())], \
         'No batch norm params in graph - the graph has been cut?'
 
     training_algorithm = GradientDescent(
@@ -427,17 +427,17 @@ def train(cli_params):
     short_prints = {
         "train": {
             'T_C_class': ladder.costs.class_corr,
-            'T_C_de': ladder.costs.denois.values(),
+            'T_C_de': list(ladder.costs.denois.values()),
         },
         "valid_approx": OrderedDict([
             ('V_C_class', ladder.costs.class_clean),
             ('V_E', ladder.error.clean),
-            ('V_C_de', ladder.costs.denois.values()),
+            ('V_C_de', list(ladder.costs.denois.values())),
         ]),
         "valid_final": OrderedDict([
             ('VF_C_class', ladder.costs.class_clean),
             ('VF_E', ladder.error.clean),
-            ('VF_C_de', ladder.costs.denois.values()),
+            ('VF_C_de', list(ladder.costs.denois.values())),
         ]),
     }
 
@@ -459,7 +459,7 @@ def train(cli_params):
             # parameters, mean and variance
             ApproxTestMonitoring(
                 [ladder.costs.class_clean, ladder.error.clean]
-                + ladder.costs.denois.values(),
+                + list(ladder.costs.denois.values()),
                 make_datastream(data.valid, data.valid_ind,
                                 p.valid_batch_size, whiten=whiten, cnorm=cnorm,
                                 scheme=ShuffledScheme),
@@ -470,7 +470,7 @@ def train(cli_params):
             # then do another pass to calculate the validation error.
             FinalTestMonitoring(
                 [ladder.costs.class_clean, ladder.error.clean]
-                + ladder.costs.denois.values(),
+                + list(ladder.costs.denois.values()),
                 make_datastream(data.train, data.train_ind,
                                 p.batch_size,
                                 n_labeled=p.labeled_samples,
@@ -487,7 +487,7 @@ def train(cli_params):
             TrainingDataMonitoring(
                 [ladder.costs.total, ladder.costs.class_corr,
                  training_algorithm.total_gradient_norm]
-                + ladder.costs.denois.values(),
+                + list(ladder.costs.denois.values()),
                 prefix="train", after_epoch=True),
 
             SaveParams(None, all_params, p.save_dir, after_epoch=True),
@@ -537,7 +537,7 @@ if __name__ == "__main__":
                     if arg is None:
                         return None
                     elif type(arg) is list:
-                        return map(compose(*func_list), arg)
+                        return list(map(compose(*func_list), arg))
                     else:
                         return compose(*func_list)(arg)
 
@@ -628,7 +628,7 @@ if __name__ == "__main__":
 
     t_start = time.time()
     if args.cmd == 'evaluate':
-        for k, v in vars(args).iteritems():
+        for k, v in vars(args).items():
             if type(v) is list:
                 assert len(v) == 1, "should not be a list when loading: %s" % k
                 logger.info("%s" % str(v[0]))
@@ -638,13 +638,13 @@ if __name__ == "__main__":
         logger.info('Test error: %f' % err)
 
     elif args.cmd == "train":
-        listdicts = {k: v for k, v in vars(args).iteritems() if type(v) is list}
-        therest = {k: v for k, v in vars(args).iteritems() if type(v) is not list}
+        listdicts = {k: v for k, v in vars(args).items() if type(v) is list}
+        therest = {k: v for k, v in vars(args).items() if type(v) is not list}
 
-        gen1, gen2 = tee(product(*listdicts.itervalues()))
+        gen1, gen2 = tee(product(*iter(listdicts.values())))
 
         l = len(list(gen1))
-        for i, d in enumerate(dict(izip(listdicts, x)) for x in gen2):
+        for i, d in enumerate(dict(zip(listdicts, x)) for x in gen2):
             if l > 1:
                 logger.info('Training configuration %d / %d' % (i+1, l))
             d.update(therest)

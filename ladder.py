@@ -71,11 +71,11 @@ class LadderAE():
                 return "fc", spec
             spec = spec.split(':')
             l_type = spec.pop(0) if len(spec) >= 2 else "fc"
-            spec = map(int, spec)
+            spec = list(map(int, spec))
             spec = spec[0] if len(spec) == 1 else spec
             return l_type, spec
 
-        enc = map(parse_layer, p.encoder_layers)
+        enc = list(map(parse_layer, p.encoder_layers))
         self.layers = list(enumerate(zip(enc, p.decoder_spec, acts)))
 
     def weight(self, init, name, cast_float32=True, for_conv=False):
@@ -615,8 +615,8 @@ class LadderAE():
             assert str == size, "depooling requires stride == size"
             u = T.zeros((sh[0], sh[1], sh[2] * str, sh[3] * str),
                         dtype=z_ver.dtype)
-            for x in xrange(str):
-                for y in xrange(str):
+            for x in range(str):
+                for y in range(str):
                     u = T.set_subtensor(u[:, :, x::str, y::str], z_ver)
             u = u[:, :, :width, :height]
 

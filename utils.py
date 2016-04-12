@@ -56,8 +56,8 @@ class ShortPrinting(Printing):
 
         # Requested channels
         items = []
-        for k, vars in self.to_print.iteritems():
-            for shortname, vars in vars.iteritems():
+        for k, vars in self.to_print.items():
+            for shortname, vars in vars.items():
                 if vars is None:
                     continue
                 if type(vars) is not list:
@@ -80,7 +80,7 @@ class ShortPrinting(Printing):
         if self.use_log:
             logger.info(msg)
         else:
-            print msg
+            print(msg)
 
 
 class SaveParams(SimpleExtension):
@@ -162,4 +162,4 @@ def load_df(dirpath, filename, varname=None):
 def filter_funcs_prefix(d, pfx):
     pfx = 'cmd_'
     fp = lambda x: x.find(pfx)
-    return {n[fp(n) + len(pfx):]: v for n, v in d.iteritems() if fp(n) >= 0}
+    return {n[fp(n) + len(pfx):]: v for n, v in d.items() if fp(n) >= 0}

@@ -178,6 +178,7 @@ def setup_model(p):
     x_only = input_type('features_unlabeled')
     x = input_type('features_labeled')
     y = theano.tensor.lvector('targets_labeled')
+
     ladder.apply(x, y, x_only)
 
     # Load parameters if requested

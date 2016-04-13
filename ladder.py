@@ -1,4 +1,5 @@
 import logging
+import sys
 
 import numpy as np
 from collections import OrderedDict
@@ -162,9 +163,10 @@ class LadderAE():
         input_concat = self.join(input_labeled, input_unlabeled)
 
         def encoder(input_, path_name, input_noise_std=0, noise_std=[]):
-            h = input_
 
+            h = input_
             logger.info('  0: noise %g' % input_noise_std)
+
             if input_noise_std > 0.:
                 h = h + self.noise_like(h) * input_noise_std
 
@@ -174,19 +176,21 @@ class LadderAE():
             d.labeled.z[0] = self.labeled(h)
             d.unlabeled.z[0] = self.unlabeled(h)
             prev_dim = input_dim
+
             for i, (spec, _, act_f) in layers[1:]:
                 d.labeled.h[i - 1], d.unlabeled.h[i - 1] = self.split_lu(h)
                 noise = noise_std[i] if i < len(noise_std) else 0.
-                curr_dim, z, m, s, h = self.f(h, prev_dim, spec, i, act_f,
-                                              path_name=path_name,
-                                              noise_std=noise)
+                h = theano.tensor.cast(h, 'float32')
+                curr_dim, z, m, s, h = self.f(h, prev_dim, spec, i, act_f, path_name=path_name, noise_std=noise)
                 assert self.layer_dims.get(i) in (None, curr_dim)
                 self.layer_dims[i] = curr_dim
                 d.labeled.z[i], d.unlabeled.z[i] = self.split_lu(z)
                 d.unlabeled.s[i] = s
                 d.unlabeled.m[i] = m
                 prev_dim = curr_dim
+
             d.labeled.h[i], d.unlabeled.h[i] = self.split_lu(h)
+
             return d
 
         # Clean, supervised
@@ -195,9 +199,7 @@ class LadderAE():
 
         # Corrupted, supervised
         logger.info('Encoder: corr, labeled')
-        corr = self.act.corr = encoder(input_concat, 'corr',
-                                       input_noise_std=self.p.super_noise_std,
-                                       noise_std=self.p.f_local_noise_std)
+        corr = self.act.corr = encoder(input_concat, 'corr', input_noise_std=self.p.super_noise_std, noise_std=self.p.f_local_noise_std)
         est = self.act.est = self.new_activation_dict()
 
         # Decoder path in opposite order

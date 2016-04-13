@@ -451,7 +451,7 @@ def train(cli_params):
                         n_unlabeled=p.unlabeled_samples,
                         whiten=whiten,
                         cnorm=cnorm),
-        model=Model(ladder.costs.total),
+        model=Model(theano.tensor.cast(ladder.costs.total, "float32")),
         extensions=[
             FinishAfter(after_n_epochs=p.num_epochs),
 

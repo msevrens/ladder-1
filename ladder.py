@@ -20,8 +20,7 @@ from utils import shared_param, AttributeDict
 from nn import maxpool_2d, global_meanpool_2d, BNPARAM
 
 logger = logging.getLogger('main.model')
-floatX = theano.config.floatX
-
+floatX = 'float32'
 
 class LadderAE():
     def __init__(self, p):
@@ -180,7 +179,7 @@ class LadderAE():
             for i, (spec, _, act_f) in layers[1:]:
                 d.labeled.h[i - 1], d.unlabeled.h[i - 1] = self.split_lu(h)
                 noise = noise_std[i] if i < len(noise_std) else 0.
-                h = theano.tensor.cast(h, 'float32')
+                h = theano.tensor.cast(h, "float32")
                 curr_dim, z, m, s, h = self.f(h, prev_dim, spec, i, act_f, path_name=path_name, noise_std=noise)
                 assert self.layer_dims.get(i) in (None, curr_dim)
                 self.layer_dims[i] = curr_dim
@@ -274,11 +273,14 @@ class LadderAE():
         for i in range(top + 1):
             if costs.denois.get(i) and self.p.denoising_cost_x[i] > 0:
                 costs.total += costs.denois[i] * self.p.denoising_cost_x[i]
+
+        costs.total = theano.tensor.cast(costs.total, "float32")
         costs.total.name = 'cost_total'
 
         # Classification error
         mr = MisclassificationRate()
         self.error.clean = mr.apply(y, clean.labeled.h[top]) * np.float32(100.)
+        self.error.clean = theano.tensor.cast(self.error.clean, "float32")
         self.error.clean.name = 'error_rate_clean'
 
     def apply_act(self, input, act_name):

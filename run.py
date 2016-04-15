@@ -39,25 +39,20 @@ from nn import LRDecay
 from ladder import LadderAE
 
 
-class Whitening(Transformer):
-    """ Makes a copy of the examples in the underlying dataset and whitens it
-        if necessary.
+class CopyDataset(Transformer):
+    """ Makes a copy of the examples in the underlying dataset.
     """
-    def __init__(self, data_stream, iteration_scheme, whiten, cnorm=None,
-                 **kwargs):
-        super(Whitening, self).__init__(data_stream,
-                                        iteration_scheme=iteration_scheme,
-                                        **kwargs)
+    def __init__(self, data_stream, iteration_scheme, **kwargs):
+        
+        super(CopyDataset, self).__init__(data_stream, iteration_scheme=iteration_scheme, **kwargs)
+
         data = data_stream.get_data(slice(data_stream.dataset.num_examples))
         self.data = []
+
         for s, d in zip(self.sources, data):
             if 'features' == s:
                 # Fuel provides Cifar in uint8, convert to float32
                 d = numpy.require(d, dtype=numpy.float32)
-                if cnorm is not None:
-                    d = cnorm.apply(d)
-                if whiten is not None:
-                    d = whiten.apply(d)
                 self.data += [d]
             elif 'targets' == s:
                 d = unify_labels(d)
@@ -67,7 +62,6 @@ class Whitening(Transformer):
 
     def get_data(self, request=None):
         return (s[request] for s in self.data)
-
 
 class SemiDataStream(Transformer):
     """ Combines two datastreams into one such that 'target' source (labels)
@@ -127,10 +121,8 @@ def unify_labels(y):
     return y
 
 
-def make_datastream(dataset, indices, batch_size,
-                    n_labeled=None, n_unlabeled=None,
-                    balanced_classes=True, whiten=None, cnorm=None,
-                    scheme=ShuffledScheme):
+def make_datastream(dataset, indices, batch_size, n_labeled=None, n_unlabeled=None, balanced_classes=True, scheme=ShuffledScheme):
+
     if n_labeled is None or n_labeled == 0:
         n_labeled = len(indices)
     if batch_size is None:
@@ -159,17 +151,11 @@ def make_datastream(dataset, indices, batch_size,
     i_unlabeled = indices[:n_unlabeled]
 
     ds = SemiDataStream(
-        data_stream_labeled=Whitening(
-            DataStream(dataset),
-            iteration_scheme=scheme(i_labeled, batch_size),
-            whiten=whiten, cnorm=cnorm),
-        data_stream_unlabeled=Whitening(
-            DataStream(dataset),
-            iteration_scheme=scheme(i_unlabeled, batch_size),
-            whiten=whiten, cnorm=cnorm)
+        data_stream_labeled=CopyDataset(DataStream(dataset), iteration_scheme=scheme(i_labeled, batch_size)),
+        data_stream_unlabeled=CopyDataset(DataStream(dataset), iteration_scheme=scheme(i_unlabeled, batch_size))
     )
-    return ds
 
+    return ds
 
 def setup_model(p):
     ladder = LadderAE(p)
@@ -268,13 +254,7 @@ def setup_data(p, test_set=False):
         d.test = dataset_class("test")
         d.test_ind = numpy.arange(d.test.num_examples)
 
-    # Setup optional whitening, only used for Cifar-10
     in_dim = train_set.data_sources[train_set.sources.index('features')].shape[1:]
-    if len(in_dim) > 1 and p.whiten_zca > 0:
-        assert numpy.product(in_dim) == p.whiten_zca, \
-            'Need %d whitening dimensions, not %d' % (numpy.product(in_dim),
-                                                      p.whiten_zca)
-    cnorm = ContrastNorm(p.contrast_norm) if p.contrast_norm != 0 else None
 
     def get_data(d, i):
         data = d.get_data(request=i)[d.sources.index('features')]
@@ -282,15 +262,7 @@ def setup_data(p, test_set=False):
         data = numpy.require(data, dtype=numpy.float32)
         return data if cnorm is None else cnorm.apply(data)
 
-    if p.whiten_zca > 0:
-        logger.info('Whitening using %d ZCA components' % p.whiten_zca)
-        whiten = ZCA()
-        whiten.fit(p.whiten_zca, get_data(d.train, d.train_ind))
-    else:
-        whiten = None
-
-    return in_dim, d, whiten, cnorm
-
+    return in_dim, d
 
 def get_error(args):
     """ Calculate the classification error """
@@ -303,10 +275,9 @@ def get_error(args):
 
     return (1. - correct / float(len(guess))) * 100.
 
-
 def analyze(cli_params):
     p, _ = load_and_log_params(cli_params)
-    _, data, whiten, cnorm = setup_data(p, test_set=True)
+    _, data = setup_data(p, test_set=True)
     ladder = setup_model(p)
 
     # Analyze activations
@@ -328,14 +299,12 @@ def analyze(cli_params):
                                     p.batch_size,
                                     n_labeled=p.labeled_samples,
                                     n_unlabeled=len(data.train_ind),
-                                    cnorm=cnorm,
-                                    whiten=whiten, scheme=ShuffledScheme),
+                                    scheme=ShuffledScheme),
                     make_datastream(data.valid, data.valid_ind,
                                     p.valid_batch_size,
                                     n_labeled=len(data.valid_ind),
                                     n_unlabeled=len(data.valid_ind),
-                                    cnorm=cnorm,
-                                    whiten=whiten, scheme=ShuffledScheme),
+                                    scheme=ShuffledScheme),
                     prefix="valid_final", before_training=True),
                 ShortPrinting({
                     "valid_final": OrderedDict([
@@ -356,8 +325,6 @@ def analyze(cli_params):
                          n_labeled=len(indices),
                          n_unlabeled=len(indices),
                          balanced_classes=False,
-                         whiten=whiten,
-                         cnorm=cnorm,
                          scheme=SequentialScheme)
 
     # We want out the values after softmax
@@ -403,7 +370,7 @@ def train(cli_params):
     logger.info('Logging into %s' % logfile)
 
     p, loaded = load_and_log_params(cli_params)
-    in_dim, data, whiten, cnorm = setup_data(p, test_set=False)
+    in_dim, data = setup_data(p, test_set=False)
     if not loaded:
         # Set the zero layer to match input dimensions
         p.encoder_layers = (in_dim,) + p.encoder_layers
@@ -448,9 +415,7 @@ def train(cli_params):
         make_datastream(data.train, data.train_ind,
                         p.batch_size,
                         n_labeled=p.labeled_samples,
-                        n_unlabeled=p.unlabeled_samples,
-                        whiten=whiten,
-                        cnorm=cnorm),
+                        n_unlabeled=p.unlabeled_samples),
         model=Model(theano.tensor.cast(ladder.costs.total, "float32")),
         extensions=[
             FinishAfter(after_n_epochs=p.num_epochs),
@@ -462,28 +427,8 @@ def train(cli_params):
                 [ladder.costs.class_clean, ladder.error.clean]
                 + list(ladder.costs.denois.values()),
                 make_datastream(data.valid, data.valid_ind,
-                                p.valid_batch_size, whiten=whiten, cnorm=cnorm,
-                                scheme=ShuffledScheme),
+                                p.valid_batch_size, scheme=ShuffledScheme),
                 prefix="valid_approx"),
-
-            # This Monitor is slower, but more accurate since it will first
-            # estimate batch normalization parameters from training data and
-            # then do another pass to calculate the validation error.
-            FinalTestMonitoring(
-                [ladder.costs.class_clean, ladder.error.clean]
-                + list(ladder.costs.denois.values()),
-                make_datastream(data.train, data.train_ind,
-                                p.batch_size,
-                                n_labeled=p.labeled_samples,
-                                whiten=whiten, cnorm=cnorm,
-                                scheme=ShuffledScheme),
-                make_datastream(data.valid, data.valid_ind,
-                                p.valid_batch_size,
-                                n_labeled=len(data.valid_ind),
-                                whiten=whiten, cnorm=cnorm,
-                                scheme=ShuffledScheme),
-                prefix="valid_final",
-                after_n_epochs=p.num_epochs),
 
             TrainingDataMonitoring(
                 [ladder.costs.total, ladder.costs.class_corr,
@@ -493,7 +438,6 @@ def train(cli_params):
 
             SaveParams(None, all_params, p.save_dir, after_epoch=True),
             SaveExpParams(p, p.save_dir, before_training=True),
-            SaveLog(p.save_dir, after_training=True),
             ShortPrinting(short_prints),
             LRDecay(ladder.lr, p.num_epochs * p.lrate_decay, p.num_epochs,
                     after_epoch=True),
@@ -600,8 +544,6 @@ if __name__ == "__main__":
           type=int, default=default([0]), nargs='+')
         a("--top-c", help="Have c at softmax?", action=funcs([to_bool]),
           default=default([True]), nargs='+')
-        a("--whiten-zca", help="Whether to whiten the data with ZCA",
-          type=int, default=default([0]), nargs='+')
 
     ap = ArgumentParser("Semisupervised experiment")
     subparsers = ap.add_subparsers(dest='cmd', help='sub-command help')
